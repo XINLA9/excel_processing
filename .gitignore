@@ -1,0 +1,19 @@
+# PyInstaller 生成的目录和文件
+build/
+dist/
+*.spec
+
+# 操作系统生成的文件
+.DS_Store
+Thumbs.db
+
+# 临时文件和压缩文件
+*.zip
+*.tar.gz
+*.rar
+
+# Python 编译和虚拟环境文件
+*.pyc
+__pycache__/
+venv/
+.venv/
