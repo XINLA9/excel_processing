@@ -1,84 +1,114 @@
 import pandas as pd
-import pyautogui
-import time
+import pyautogui, pyperclip, time
 import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
 
-import pyperclip
+# --------------------------
+# 全局变量
+# --------------------------
+root = tk.Tk()
+root.title("欠费通知自动发送工具")
+root.geometry("600x500")
+file_path_var = tk.StringVar()
 
-# --- 1. 配置信息 ---
-BILL_FILE_PATH = '账单表格.xlsx'
-# 搜索框的坐标，你需要手动获取
-# 1. 运行 `print(pyautogui.position())`
-# 2. 将鼠标移动到搜索框，然后复制打印出的坐标
-SEARCH_BOX_COORDS = (100, 150)  # 示例坐标，请替换为你自己的
+# --------------------------
+# 核心函数
+# --------------------------
+def select_file():
+    """选择 Excel 文件"""
+    path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
+    if path:
+        file_path_var.set(path)
+        file_label.config(text=path)
+        # 显示 sheet 名称
+        sheets = pd.ExcelFile(path).sheet_names
+        sheet_combo['values'] = sheets
+        if sheets:
+            sheet_combo.current(0)
 
-# --- 2. 核心函数 ---
+def log(msg):
+    """向日志框输出信息"""
+    log_box.insert(tk.END, msg + "\n")
+    log_box.see(tk.END)  # 滚动到末尾
+    print(msg)
 
 def send_message_via_ui(manager_name, company_name, debt_amount, phone_number):
-    """
-    通过模拟按键发送消息的函数
-    """
-    print(f"正在为客户经理 {manager_name} 准备发送通知...")
+    """模拟发送消息"""
+    log(f"准备发送给客户经理 {manager_name} ...")
 
     try:
-        # 激活通讯录窗口（这一步可能需要手动完成或使用pygetwindow）
         # 假设当前窗口就是通讯录窗口
-
-        # 1. 点击搜索框或按下快捷键
-        # 模拟 Ctrl+F 快捷键
         pyautogui.hotkey('ctrl', 'f')
-        time.sleep(1)  # 等待搜索框出现
-
-        # 2. 输入客户经理名字
+        time.sleep(1)
         pyautogui.write(str(phone_number))
-        time.sleep(1)  # 等待搜索结果出现
-
-        # 3. 模拟按 Enter 键进入聊天
-        # 假设搜索结果的第一个就是正确的客户经理，直接按Enter
+        time.sleep(1)
         pyautogui.press('enter')
-        time.sleep(2)  # 等待聊天窗口加载
+        time.sleep(2)
 
-        # 4. 构造并输入消息内容
         message = f"你好，这是测试，{company_name} 客户已产生欠费，欠费金额为：¥{debt_amount}。请及时联系客户处理。谢谢！"
         pyperclip.copy(message)
         pyautogui.hotkey('ctrl', 'v')
         time.sleep(0.5)
-
-        # 5. 模拟按 Enter 键发送消息
         pyautogui.press('enter')
-        print(f"成功向 {manager_name} 发送消息。")
-        time.sleep(2)  # 发送后等待一段时间
+
+        log(f"成功向 {manager_name} 发送消息。")
+        time.sleep(1)
 
     except Exception as e:
-        print(f"操作失败，错误：{e}")
+        log(f"操作失败，错误：{e}")
 
-# --- 3. 主逻辑 ---
-def main():
-    print("Start working!")
-    pyautogui.hotkey('ctrl', 'f')
-    time.sleep(1)
-    pyautogui.write("移动办公")
-    time.sleep(1)
-    pyautogui.press('enter')
-    time.sleep(2)
-
-    try:
-        df = pd.read_excel(BILL_FILE_PATH)
-    except FileNotFoundError:
-        print(f"错误：未找到文件 {BILL_FILE_PATH}")
+def start_processing():
+    """开始处理 Excel 文件"""
+    path = file_path_var.get()
+    if not path:
+        messagebox.showwarning("提示", "请先选择 Excel 文件")
         return
-    print("successfully load!")
-    print(df)
-    # 遍历每一行数据
-    for index, row in df.iterrows():
-        company_name = row['企业名称']
-        debt_amount = row['欠费金额']
-        manager_name = row['客户经理']
-        phone_number = row['电话号码']
 
-        send_message_via_ui(manager_name, company_name, debt_amount, phone_number)
+    log("开始处理 Excel 文件...")
+    try:
+        xls = pd.ExcelFile(path)
+    except Exception as e:
+        messagebox.showerror("错误", f"无法读取文件: {e}")
+        return
 
-if __name__ == "__main__":
-    # 在运行前，请确保通讯录窗口处于激活状态
-    # 建议在运行前打开通讯录并将其置于屏幕中心
-    main()
+    for sheet_name in xls.sheet_names:
+        log(f"处理 Sheet: {sheet_name}")
+        try:
+            df = pd.read_excel(path, sheet_name=sheet_name)
+        except Exception as e:
+            log(f"读取 Sheet {sheet_name} 失败: {e}")
+            continue
+
+        for index, row in df.iterrows():
+            try:
+                send_message_via_ui(
+                    row['客户经理'],
+                    row['企业名称'],
+                    row['欠费金额'],
+                    row['电话号码']
+                )
+            except KeyError as e:
+                log(f"缺少列: {e}")
+            except Exception as e:
+                log(f"处理第 {index+1} 行失败: {e}")
+
+    log("所有 Sheet 处理完成！")
+
+# --------------------------
+# GUI
+# --------------------------
+root.geometry("600x500")
+
+file_btn = tk.Button(root, text="选择 Excel 文件", command=select_file)
+file_btn.pack(pady=5)
+
+file_label = tk.Label(root, text="未选择文件", anchor="w")
+file_label.pack(fill=tk.X, padx=10)
+
+start_btn = tk.Button(root, text="开始处理", command=start_processing)
+start_btn.pack(pady=10)
+
+log_box = tk.Text(root, height=20, width=70)
+log_box.pack(padx=10, pady=5)
+
+root.mainloop()
