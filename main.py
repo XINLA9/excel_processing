@@ -20,11 +20,6 @@ def select_file():
     if path:
         file_path_var.set(path)
         file_label.config(text=path)
-        # 显示 sheet 名称
-        sheets = pd.ExcelFile(path).sheet_names
-        sheet_combo['values'] = sheets
-        if sheets:
-            sheet_combo.current(0)
 
 def log(msg):
     """向日志框输出信息"""
