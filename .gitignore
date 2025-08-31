@@ -11,6 +11,7 @@ Thumbs.db
 *.zip
 *.tar.gz
 *.rar
+*.exe
 
 # Python 编译和虚拟环境文件
 *.pyc
