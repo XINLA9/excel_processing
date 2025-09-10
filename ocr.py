@@ -17,6 +17,7 @@ from PIL import Image, ImageGrab, ImageOps, ImageFilter
 # Windows 常见路径：C:\\Program Files\\Tesseract-OCR\\tesseract.exe
 try:
     import pytesseract
+
     TESS_AVAILABLE = True
 except Exception:
     pytesseract = None
@@ -37,24 +38,9 @@ DEFAULT_CONFIG = {
     "use_ocr": True,
 }
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__) if '__file__' in globals() else os.getcwd(), 'config.json')
 
 # ================== 工具 & OCR ===========================
-
-def load_config():
-    """从文件加载配置，如果文件不存在则加载默认配置"""
-    if os.path.exists(CONFIG_PATH):
-        try:
-            with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                # 合并默认配置，保证新字段有默认值
-                merged = DEFAULT_CONFIG.copy()
-                merged.update(data)
-                return merged
-        except Exception as e:
-            print(f"读取配置失败，使用默认配置: {e}")
-    return DEFAULT_CONFIG.copy()
-
+# 计算相似度
 def ratio(a: str, b: str) -> float:
     """计算两个字符串的相似度"""
     a = (a or '').strip()
@@ -63,6 +49,8 @@ def ratio(a: str, b: str) -> float:
         return 0.0
     return difflib.SequenceMatcher(None, a, b).ratio()
 
+
+# 对图像进行预处理
 def preprocess_for_ocr(img: Image.Image) -> Image.Image:
     """基础预处理：灰度 -> 自适应对比度 -> 轻度锐化，提升 OCR 稳定性。"""
     g = ImageOps.grayscale(img)
@@ -72,6 +60,8 @@ def preprocess_for_ocr(img: Image.Image) -> Image.Image:
     g = g.filter(ImageFilter.SHARPEN)
     return g
 
+
+# 抓取区域
 def grab_region(region):
     """根据坐标 (x1, y1, x2, y2) 截取屏幕区域"""
     if not region:
@@ -79,8 +69,11 @@ def grab_region(region):
     box = (int(region[0]), int(region[1]), int(region[2]), int(region[3]))
     return ImageGrab.grab(bbox=box)
 
+
+# ocr提取文字
 def ocr_text_from_region(region, lang='chi_sim') -> str:
     """对指定区域进行 OCR 文本识别"""
+    print("进行ocr")
     if not TESS_AVAILABLE or pytesseract is None:
         return ""
     img = grab_region(region)
@@ -94,8 +87,9 @@ def ocr_text_from_region(region, lang='chi_sim') -> str:
         print(f"OCR 失败: {e}")
         return ""
 
-# ================== 可视化截图选区 =======================
 
+# ================== 可视化截图选区 =======================
+# 截图GUI类
 class ScreenCapture:
     """用于截图选区的 GUI 类"""
 
@@ -151,8 +145,9 @@ def select_region_blocking() -> tuple:
     sc = ScreenCapture()
     return sc.region
 
-# ================== 发送 & 验证 ==========================
 
+# ================== 发送 & 验证 ==========================
+# 发送器类
 class Sender:
     """负责执行消息发送和OCR验证的类"""
 
@@ -221,7 +216,7 @@ class Sender:
             pyautogui.hotkey('ctrl', 'f')
             time.sleep(0.8)
             pyautogui.typewrite(str(phone_number), interval=0.02)
-            time.sleep(1)
+            time.sleep(0.8)
             pyautogui.press('enter')
             time.sleep(self.cfg.get('search_wait_sec', 2.0))
 
@@ -258,8 +253,9 @@ class Sender:
             else:
                 self.log(f"❌ 验证失败/异常，第 {i} 次尝试")
                 time.sleep(0.8)
-        self.log(f"🛑 最终失败 -> {contact_name or phone_number}")
+        self.log(f"🛑 发送失败 -> {contact_name or phone_number}")
         return False
+
 
 # ================== GUI 主程序 ===========================
 
@@ -269,8 +265,8 @@ class App:
     def __init__(self, root):
         self.root = root
         self.root.title("欠费通知自动发送工具")
-        self.root.geometry("820x680")
-        self.cfg = load_config()
+        self.root.geometry("820x700")
+        self.cfg = DEFAULT_CONFIG.copy()
         self.last_failed_file_path = None
 
         # Tesseract 检查
@@ -292,7 +288,7 @@ class App:
         # Excel 选择
         frm_file = ttk.LabelFrame(self.root, text="Excel 文件")
         frm_file.pack(fill=tk.X, padx=pad, pady=pad)
-        self.var_excel = tk.StringVar(value=self.cfg.get('excel_path', ''))
+        self.var_excel = tk.StringVar(value="")
         ttk.Entry(frm_file, textvariable=self.var_excel).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=pad, pady=pad)
         ttk.Button(frm_file, text="选择...", command=self.select_excel).pack(side=tk.LEFT, padx=pad)
 
@@ -395,6 +391,7 @@ class App:
         try:
             self.txt_log.insert(tk.END, str(msg) + "\n")
             self.txt_log.see(tk.END)
+            self.root.update_idletasks()  # 确保日志能立即显示
         except Exception:
             print(msg)
 
@@ -403,6 +400,7 @@ class App:
         path = filedialog.askopenfilename(filetypes=[("Excel 文件", "*.xlsx;*.xls")])
         if path:
             self.var_excel.set(path)
+            # 在选择新文件时，清空之前保存的失败文件路径
             self.last_failed_file_path = None
             self.update_button_states(False)
 
@@ -447,7 +445,14 @@ class App:
     # ---------- 业务主流程 ----------
     def start_processing(self):
         """开始处理主流程，发送并记录失败项"""
-        excel = self.cfg.get('excel_path')
+        # 获取最新的配置（虽然已无文件加载，但仍保留逻辑以处理用户UI修改）
+        self.cfg['ocr_threshold'] = float(self.var_threshold.get())
+        self.cfg['max_retries'] = int(self.var_retries.get())
+        self.cfg['search_wait_sec'] = float(self.var_search_wait.get())
+        self.cfg['post_send_wait_sec'] = float(self.var_post_wait.get())
+        self.cfg['use_ocr'] = bool(self.var_use_ocr.get())
+
+        excel = self.var_excel.get()
         if not excel or not os.path.exists(excel):
             messagebox.showerror("错误", "请先选择有效的 Excel 文件")
             return
@@ -592,6 +597,7 @@ class App:
             self.process_from_file(self.last_failed_file_path)
         else:
             messagebox.showwarning("提示", "没有可供二次发送的失败文件，请先运行主程序。")
+
 
 if __name__ == '__main__':
     root = tk.Tk()
