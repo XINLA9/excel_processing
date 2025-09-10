@@ -73,7 +73,6 @@ def grab_region(region):
 # ocr提取文字
 def ocr_text_from_region(region, lang='chi_sim') -> str:
     """对指定区域进行 OCR 文本识别"""
-    print("进行ocr")
     if not TESS_AVAILABLE or pytesseract is None:
         return ""
     img = grab_region(region)
