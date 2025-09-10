@@ -17,7 +17,6 @@ from PIL import Image, ImageGrab, ImageOps, ImageFilter
 # Windows 常见路径：C:\\Program Files\\Tesseract-OCR\\tesseract.exe
 try:
     import pytesseract
-
     TESS_AVAILABLE = True
 except Exception:
     pytesseract = None
@@ -29,7 +28,7 @@ DEFAULT_CONFIG = {
     "target_sheets": ["30天通报", "60天通报", "90天通报"],
     "region_contact": None,  # (x1, y1, x2, y2)
     "region_message": None,  # (x1, y1, x2, y2)
-    "tesseract_path": "",  # Tesseract 可执行文件路径
+    "tesseract_path": "C:\\Program Files\\Tesseract-OCR\\tesseract.exe",  # Tesseract
     "ocr_lang": "chi_sim",  # 简体中文
     "ocr_threshold": 0.70,  # 相似度阈值
     "max_retries": 3,  # 发送失败重试次数
@@ -40,17 +39,7 @@ DEFAULT_CONFIG = {
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__) if '__file__' in globals() else os.getcwd(), 'config.json')
 
-
 # ================== 工具 & OCR ===========================
-
-def save_config(cfg):
-    """保存当前配置到文件"""
-    try:
-        with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
-            json.dump(cfg, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"保存配置失败: {e}")
-
 
 def load_config():
     """从文件加载配置，如果文件不存在则加载默认配置"""
@@ -66,7 +55,6 @@ def load_config():
             print(f"读取配置失败，使用默认配置: {e}")
     return DEFAULT_CONFIG.copy()
 
-
 def ratio(a: str, b: str) -> float:
     """计算两个字符串的相似度"""
     a = (a or '').strip()
@@ -74,7 +62,6 @@ def ratio(a: str, b: str) -> float:
     if not a or not b:
         return 0.0
     return difflib.SequenceMatcher(None, a, b).ratio()
-
 
 def preprocess_for_ocr(img: Image.Image) -> Image.Image:
     """基础预处理：灰度 -> 自适应对比度 -> 轻度锐化，提升 OCR 稳定性。"""
@@ -85,14 +72,12 @@ def preprocess_for_ocr(img: Image.Image) -> Image.Image:
     g = g.filter(ImageFilter.SHARPEN)
     return g
 
-
 def grab_region(region):
     """根据坐标 (x1, y1, x2, y2) 截取屏幕区域"""
     if not region:
         return None
     box = (int(region[0]), int(region[1]), int(region[2]), int(region[3]))
     return ImageGrab.grab(bbox=box)
-
 
 def ocr_text_from_region(region, lang='chi_sim') -> str:
     """对指定区域进行 OCR 文本识别"""
@@ -108,7 +93,6 @@ def ocr_text_from_region(region, lang='chi_sim') -> str:
     except Exception as e:
         print(f"OCR 失败: {e}")
         return ""
-
 
 # ================== 可视化截图选区 =======================
 
@@ -166,7 +150,6 @@ def select_region_blocking() -> tuple:
     """启动截图选区程序并返回选区坐标"""
     sc = ScreenCapture()
     return sc.region
-
 
 # ================== 发送 & 验证 ==========================
 
@@ -238,7 +221,7 @@ class Sender:
             pyautogui.hotkey('ctrl', 'f')
             time.sleep(0.8)
             pyautogui.typewrite(str(phone_number), interval=0.02)
-            time.sleep(0.6)
+            time.sleep(1)
             pyautogui.press('enter')
             time.sleep(self.cfg.get('search_wait_sec', 2.0))
 
@@ -278,7 +261,6 @@ class Sender:
         self.log(f"🛑 最终失败 -> {contact_name or phone_number}")
         return False
 
-
 # ================== GUI 主程序 ===========================
 
 class App:
@@ -314,12 +296,6 @@ class App:
         ttk.Entry(frm_file, textvariable=self.var_excel).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=pad, pady=pad)
         ttk.Button(frm_file, text="选择...", command=self.select_excel).pack(side=tk.LEFT, padx=pad)
 
-        # 目标 Sheets
-        frm_sheet = ttk.LabelFrame(self.root, text="目标 Sheet（逗号分隔）")
-        frm_sheet.pack(fill=tk.X, padx=pad, pady=pad)
-        self.var_sheets = tk.StringVar(value=','.join(self.cfg.get('target_sheets', [])))
-        ttk.Entry(frm_sheet, textvariable=self.var_sheets).pack(fill=tk.X, padx=pad, pady=pad)
-
         # OCR 与 Tesseract
         frm_ocr = ttk.LabelFrame(self.root, text="OCR 设置")
         frm_ocr.pack(fill=tk.X, padx=pad, pady=pad)
@@ -329,18 +305,9 @@ class App:
                                                                                                       padx=pad,
                                                                                                       pady=pad)
 
-        ttk.Label(frm_ocr, text="Tesseract 路径").grid(row=1, column=0, sticky='w', padx=pad)
-        self.var_tesseract = tk.StringVar(value=self.cfg.get('tesseract_path', ''))
-        ttk.Entry(frm_ocr, textvariable=self.var_tesseract, width=60).grid(row=1, column=1, sticky='we', padx=pad)
-        ttk.Button(frm_ocr, text="浏览...", command=self.pick_tesseract).grid(row=1, column=2, padx=pad)
-
-        ttk.Label(frm_ocr, text="语言(lang)").grid(row=2, column=0, sticky='w', padx=pad)
-        self.var_lang = tk.StringVar(value=self.cfg.get('ocr_lang', 'chi_sim'))
-        ttk.Entry(frm_ocr, textvariable=self.var_lang, width=12).grid(row=2, column=1, sticky='w', padx=pad)
-
-        ttk.Label(frm_ocr, text="相似度阈值").grid(row=2, column=2, sticky='e', padx=pad)
+        ttk.Label(frm_ocr, text="相似度阈值").grid(row=0, column=2, sticky='e', padx=pad)
         self.var_threshold = tk.DoubleVar(value=float(self.cfg.get('ocr_threshold', 0.70)))
-        ttk.Entry(frm_ocr, textvariable=self.var_threshold, width=8).grid(row=2, column=3, sticky='w', padx=pad)
+        ttk.Entry(frm_ocr, textvariable=self.var_threshold, width=8).grid(row=0, column=3, sticky='w', padx=pad)
 
         # OCR 区域选择
         frm_region = ttk.LabelFrame(self.root, text="选择 OCR 区域")
@@ -373,10 +340,9 @@ class App:
         frm_btn = ttk.Frame(self.root)
         frm_btn.pack(fill=tk.X, padx=pad, pady=pad)
         ttk.Button(frm_btn, text="开始处理", command=self.start_processing).pack(side=tk.LEFT, padx=pad)
-        ttk.Button(frm_btn, text="保存配置", command=self.save_current_config).pack(side=tk.LEFT)
         self.btn_resend = ttk.Button(frm_btn, text="二次发送", command=self.start_reprocessing, state='disabled')
         self.btn_resend.pack(side=tk.LEFT, padx=pad)
-        self.btn_open_failed = ttk.Button(frm_btn, text="打开失败文件", command=self.open_failed_file, state='disabled')
+        self.btn_open_failed = ttk.Button(frm_btn, text="未发送名单", command=self.open_failed_file, state='disabled')
         self.btn_open_failed.pack(side=tk.LEFT)
         ttk.Button(frm_btn, text="使用说明", command=self.show_instructions).pack(side=tk.LEFT, padx=pad)
 
@@ -440,11 +406,6 @@ class App:
             self.last_failed_file_path = None
             self.update_button_states(False)
 
-    def pick_tesseract(self):
-        path = filedialog.askopenfilename(filetypes=[("可执行文件", "*.exe;*")])
-        if path:
-            self.var_tesseract.set(path)
-
     def choose_contact_region(self):
         messagebox.showinfo("提示", "请选取【联系人名称】所在区域")
         region = select_region_blocking()
@@ -470,7 +431,7 @@ class App:
         if not TESS_AVAILABLE:
             messagebox.showwarning("提示", "未安装 pytesseract")
             return
-        text = ocr_text_from_region(self.cfg['region_contact'], self.var_lang.get())
+        text = ocr_text_from_region(self.cfg['region_contact'], self.cfg['ocr_lang'])
         self.log(f"[预览-联系人] -> {text}")
 
     def preview_message_ocr(self):
@@ -480,27 +441,12 @@ class App:
         if not TESS_AVAILABLE:
             messagebox.showwarning("提示", "未安装 pytesseract")
             return
-        text = ocr_text_from_region(self.cfg['region_message'], self.var_lang.get())
+        text = ocr_text_from_region(self.cfg['region_message'], self.cfg['ocr_lang'])
         self.log(f"[预览-消息] -> {text}")
-
-    def save_current_config(self):
-        self.cfg['excel_path'] = self.var_excel.get()
-        self.cfg['target_sheets'] = [s.strip() for s in self.var_sheets.get().split(',') if s.strip()]
-        self.cfg['tesseract_path'] = self.var_tesseract.get()
-        self.cfg['ocr_lang'] = self.var_lang.get()
-        self.cfg['ocr_threshold'] = float(self.var_threshold.get())
-        self.cfg['max_retries'] = int(self.var_retries.get())
-        self.cfg['search_wait_sec'] = float(self.var_search_wait.get())
-        self.cfg['post_send_wait_sec'] = float(self.var_post_wait.get())
-        self.cfg['use_ocr'] = bool(self.var_use_ocr.get())
-        save_config(self.cfg)
-        self.sender = Sender(self.cfg, self.log)  # 让 Sender 读取最新配置
-        self.log("✅ 配置已保存")
 
     # ---------- 业务主流程 ----------
     def start_processing(self):
         """开始处理主流程，发送并记录失败项"""
-        self.save_current_config()  # 确保最新参数生效
         excel = self.cfg.get('excel_path')
         if not excel or not os.path.exists(excel):
             messagebox.showerror("错误", "请先选择有效的 Excel 文件")
@@ -647,9 +593,7 @@ class App:
         else:
             messagebox.showwarning("提示", "没有可供二次发送的失败文件，请先运行主程序。")
 
-
 if __name__ == '__main__':
-    # 一些系统在高 DPI 下坐标会缩放，如异常可尝试关闭缩放或以管理员运行
     root = tk.Tk()
     style = ttk.Style()
     try:
