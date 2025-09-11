@@ -13,7 +13,6 @@ from PIL import Image, ImageGrab, ImageOps, ImageFilter
 # =============== 可选依赖：pytesseract ==================
 try:
     import pytesseract
-
     TESS_AVAILABLE = True
 except Exception:
     pytesseract = None
