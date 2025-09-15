@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import difflib
 import tkinter as tk
@@ -42,8 +43,27 @@ class OCRManager:
             try:
                 pytesseract.pytesseract.tesseract_cmd = tesseract_path
             except Exception as e:
-                print(f"设置 Tesseract 路径失败: {e}")
+                messagebox.showerror("Tesseract 错误", f"设置 Tesseract 路径失败: {e}")
                 self.tesseract_available = False
+                sys.exit(1)
+
+        # 检查 Tesseract 是否真正可用
+        if self.tesseract_available:
+            try:
+                _ = pytesseract.get_tesseract_version()
+            except Exception:
+                messagebox.showerror("Tesseract 未安装", "未检测到 Tesseract，请使用软件包的文件进行安装。")
+                self.tesseract_available = False
+                sys.exit(1)
+
+        # 检查语言包是否存在
+        lang = "chi_sim"
+        available_langs = pytesseract.get_languages(config='')
+        if lang not in available_langs:
+            messagebox.showerror("缺少语言包", f"缺少语言包 '{lang}'，请将“chi_sim.traineddata”"
+                                               f"文件放置到 “C:\Program Files\Tesseract-OCR/tessdata” 文件夹下。")
+            sys.exit(1)
+
 
     def _preprocess_for_ocr(self, img: Image.Image) -> Image.Image:
         g = ImageOps.grayscale(img)
@@ -206,15 +226,15 @@ class Sender:
                 self.log(f"✅ 发送成功 -> {contact_name or phone_number}")
                 return True
             else:
-                self.log(f"❌ 验证失败/异常，第 {i} 次尝试")
+                self.log(f"验证失败/异常，第 {i} 次尝试")
                 time.sleep(0.8)
-        self.log(f"🛑 发送失败 -> {contact_name or phone_number}")
+        self.log(f"发送失败 -> {contact_name or phone_number}")
         return False
 
 
 # ================== GUI 主程序 ===========================
 
-class App:
+class OcrApp:
     def __init__(self, root):
         self.root = root
         self.root.title("欠费通知自动发送工具")
@@ -482,14 +502,3 @@ class App:
                 os.remove(self.failed_file_path)
             self.update_button_states(False)
             self.log("🎉 所有信息发送成功，没有失败记录")
-
-
-if __name__ == '__main__':
-    root = tk.Tk()
-    style = ttk.Style()
-    try:
-        style.theme_use('clam')
-    except Exception:
-        pass
-    app = App(root)
-    root.mainloop()
