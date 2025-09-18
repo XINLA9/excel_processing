@@ -1,10 +1,13 @@
-import os
-import re
-import sys
-import tkinter as tk
-from datetime import datetime, timedelta
-from tkinter import filedialog, messagebox, ttk
 import pandas as pd
+import numpy as np
+import re
+import os
+import sys
+from datetime import datetime, timedelta
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+from io import StringIO
+
 
 class TextRedirector(object):
     def __init__(self, widget, tag="stdout"):
@@ -21,7 +24,7 @@ class TextRedirector(object):
         pass
 
 
-def excel_app():
+def main():
     """主函数：创建文件选择界面"""
     # 创建主窗口
     root = tk.Tk()
@@ -275,6 +278,8 @@ def process_data(file_paths, root, process_button, status_label, output_text):
         director_phone_mapping = df_contact_list.drop_duplicates(subset=['姓名']).set_index('姓名')['总监电话']
         leader_mapping = df_contact_list.drop_duplicates(subset=['姓名']).set_index('姓名')['分管领导']
         leader_phone_mapping = df_contact_list.drop_duplicates(subset=['姓名']).set_index('姓名')['分管领导电话']
+        # 新增：客户经理电话映射
+        manager_phone_mapping = df_contact_list.drop_duplicates(subset=['姓名']).set_index('姓名')['联系电话']
 
         # 初始化所属分公司列
         df_copy['所属分公司'] = '未知'
@@ -384,14 +389,16 @@ def process_data(file_paths, root, process_button, status_label, output_text):
             df_30_days['分管领导'] = ''
             df_30_days['总监电话'] = ''
             df_30_days['分管领导电话'] = ''
+            # 新增客户经理电话列
+            df_30_days['客户经理电话'] = df_30_days['补充客户经理'].map(manager_phone_mapping).fillna('')
             df_30_days['短信模板'] = df_30_days.apply(
                 lambda
-                    row: f"客户经理{row['补充客户经理']}名下{row['客户名称']}于{row['开票日期'].strftime('%Y-%m-%d')}开具发票，票号{row['发票号码']}，金额{row['发票总金额']}，逾期未回款30天以上，请于{row['收票日期'].strftime('%Y-%m-%d')}内回款。如客户违约拒不回款的，应及时与客户确认后冲红发票。",
+                    row: f"客户经理{row['补充客户经理']}名下{row['客户名称']}于{row['开票日期'].strftime('%Y-%m-%d')}开具发票，票号{row['发票号码']}，金额{row['发票总金额']}，逾期未回款30天以上，请尽快回款，如客户违约拒不回款的，应及时与客户确认后冲红发票。",
                 axis=1
             )
             df_30_days = df_30_days[
-                ['补充客户经理', '催款类型', '客户名称', '开票日期', '发票号码', '发票总金额', '收票日期', '短信模板',
-                 '总监', '分管领导', '总监电话', '分管领导电话']]
+                ['补充客户经理', '客户经理电话', '催款类型', '客户名称', '开票日期', '发票号码', '发票总金额',
+                 '收票日期', '短信模板', '总监', '分管领导', '总监电话', '分管领导电话']]
 
         # 二、60天通报
         df_60_days = df_copy[df_copy['催款类型'] == '大于60天并小于等于90天'].copy()
@@ -401,14 +408,16 @@ def process_data(file_paths, root, process_button, status_label, output_text):
             df_60_days['总监电话'] = df_60_days['补充客户经理'].map(director_phone_mapping).fillna('')
             df_60_days['分管领导'] = ''
             df_60_days['分管领导电话'] = ''
+            # 新增客户经理电话列
+            df_60_days['客户经理电话'] = df_60_days['补充客户经理'].map(manager_phone_mapping).fillna('')
             df_60_days['短信模板'] = df_60_days.apply(
                 lambda
-                    row: f"客户经理{row['补充客户经理']}名下{row['客户名称']}于{row['开票日期'].strftime('%Y-%m-%d')}开具发票，票号{row['发票号码']}，金额{row['发票总金额']}，逾期未回款60天以上，请于{row['收票日期'].strftime('%Y-%m-%d')}内回款。如客户违约拒不回款的，应及时与客户确认后冲红发票。",
+                    row: f"客户经理{row['补充客户经理']}名下{row['客户名称']}于{row['开票日期'].strftime('%Y-%m-%d')}开具发票，票号{row['发票号码']}，金额{row['发票总金额']}，逾期未回款60天以上，请尽快回款，如客户违约拒不回款的，应及时与客户确认后冲红发票。",
                 axis=1
             )
             df_60_days = df_60_days[
-                ['补充客户经理', '催款类型', '客户名称', '开票日期', '发票号码', '发票总金额', '收票日期', '短信模板',
-                 '总监', '分管领导', '总监电话', '分管领导电话']]
+                ['补充客户经理', '客户经理电话', '催款类型', '客户名称', '开票日期', '发票号码', '发票总金额',
+                 '收票日期', '短信模板', '总监', '分管领导', '总监电话', '分管领导电话']]
 
         # 三、90天通报
         df_90_days = df_copy[df_copy['催款类型'] == '大于90天'].copy()
@@ -418,14 +427,16 @@ def process_data(file_paths, root, process_button, status_label, output_text):
             df_90_days['总监电话'] = df_90_days['补充客户经理'].map(director_phone_mapping).fillna('')
             df_90_days['分管领导'] = df_90_days['补充客户经理'].map(leader_mapping).fillna('')
             df_90_days['分管领导电话'] = df_90_days['补充客户经理'].map(leader_phone_mapping).fillna('')
+            # 新增客户经理电话列
+            df_90_days['客户经理电话'] = df_90_days['补充客户经理'].map(manager_phone_mapping).fillna('')
             df_90_days['短信模板'] = df_90_days.apply(
                 lambda
-                    row: f"客户经理{row['补充客户经理']}名下{row['客户名称']}于{row['开票日期'].strftime('%Y-%m-%d')}开具发票，票号{row['发票号码']}，金额{row['发票总金额']}，逾期未回款90天以上，请于{row['收票日期'].strftime('%Y-%m-%d')}内回款。如客户违约拒不回款的，应及时与客户确认后冲红发票。",
+                    row: f"客户经理{row['补充客户经理']}名下{row['客户名称']}于{row['开票日期'].strftime('%Y-%m-%d')}开具发票，票号{row['发票号码']}，金额{row['发票总金额']}，逾期未回款90天以上，请尽快回款，如客户违约拒不回款的，应及时与客户确认后冲红发票。",
                 axis=1
             )
             df_90_days = df_90_days[
-                ['补充客户经理', '催款类型', '客户名称', '开票日期', '发票号码', '发票总金额', '收票日期', '短信模板',
-                 '总监', '分管领导', '总监电话', '分管领导电话']]
+                ['补充客户经理', '客户经理电话', '催款类型', '客户名称', '开票日期', '发票号码', '发票总金额',
+                 '收票日期', '短信模板', '总监', '分管领导', '总监电话', '分管领导电话']]
 
         # 创建数据透视表
         payment_types = ["小于30天", "大于30天并小于等于60天", "大于60天并小于等于90天", "大于90天"]
@@ -488,3 +499,8 @@ def process_data(file_paths, root, process_button, status_label, output_text):
         sys.stdout = old_stdout
         # 重新启用开始按钮
         root.after(0, lambda: process_button.config(state="normal"))
+
+
+# 启动程序
+if __name__ == "__main__":
+    main()
