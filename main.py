@@ -10,10 +10,10 @@ def open_ocr():
         style.theme_use('clam')
     except Exception:
         pass
-    sender_app.OcrApp(win)
+    sender_app.SenderApp(win)
 
 def open_excel():
-    excel_app()
+    excel_app.excel_app()
 
 if __name__ == '__main__':
     root = tk.Tk()
