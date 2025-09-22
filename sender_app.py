@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import difflib
 import tkinter as tk
@@ -24,6 +25,7 @@ DEFAULT_CONFIG = {
     "target_sheets": ["30天通报", "60天通报", "90天通报"],
     "region_contact": None,
     "region_message": None,
+    "click_point": None,
     "tesseract_path": "C:\\Program Files\\Tesseract-OCR\\tesseract.exe",
     "ocr_lang": "chi_sim",
     "ocr_threshold": 0.70,
@@ -31,6 +33,7 @@ DEFAULT_CONFIG = {
     "post_send_wait_sec": 2.0,
     "search_wait_sec": 2.0,
     "use_ocr": True,
+    "use_click": True,
 }
 
 
@@ -42,8 +45,27 @@ class OCRManager:
             try:
                 pytesseract.pytesseract.tesseract_cmd = tesseract_path
             except Exception as e:
-                print(f"设置 Tesseract 路径失败: {e}")
+                messagebox.showerror("Tesseract 错误", f"设置 Tesseract 路径失败: {e}")
                 self.tesseract_available = False
+                sys.exit(1)
+
+        # 检查 Tesseract 是否真正可用
+        if self.tesseract_available:
+            try:
+                _ = pytesseract.get_tesseract_version()
+            except Exception:
+                messagebox.showerror("Tesseract 未安装", "未检测到 Tesseract，请使用软件包的文件进行安装。")
+                self.tesseract_available = False
+                sys.exit(1)
+
+        # 检查语言包是否存在
+        lang = "chi_sim"
+        available_langs = pytesseract.get_languages(config='')
+        if lang not in available_langs:
+            messagebox.showerror("缺少语言包", f"缺少语言包 '{lang}'，请将“chi_sim.traineddata” "
+                                               r"文件放置到 “C:\Program Files\Tesseract-OCR\tessdata” 文件夹下。")
+            sys.exit(1)
+
 
     def _preprocess_for_ocr(self, img: Image.Image) -> Image.Image:
         g = ImageOps.grayscale(img)
@@ -83,6 +105,10 @@ class OCRManager:
     def select_region_gui(self) -> tuple:
         capture_app = self._ScreenCaptureGUI()
         return capture_app.region
+
+    def select_point_gui(self) -> tuple:
+        capture_app = self._ClickPointGUI()
+        return capture_app.point
 
     class _ScreenCaptureGUI:
         def __init__(self):
@@ -127,6 +153,24 @@ class OCRManager:
             self.root.quit()
             self.root.destroy()
 
+    class _ClickPointGUI:
+        def __init__(self):
+            self.point = None
+            self.root = tk.Tk()
+            self.root.attributes('-fullscreen', True)
+            self.root.attributes('-alpha', 0.10)  # 透明度可以调低
+            self.root.configure(bg='gray')
+            self.canvas = tk.Canvas(self.root, cursor="cross", bg="gray", highlightthickness=0)
+            self.canvas.pack(fill=tk.BOTH, expand=True)
+            self.canvas.bind("<ButtonPress-1>", self.on_mouse_down)
+            self.root.mainloop()
+
+        def on_mouse_down(self, event):
+            x = self.canvas.canvasx(event.x)
+            y = self.canvas.canvasy(event.y)
+            self.point = (x, y)
+            self.root.quit()
+            self.root.destroy()
 
 # ================== 发送 & 验证 ==========================
 class Sender:
@@ -181,7 +225,11 @@ class Sender:
             time.sleep(0.8)
             pyautogui.typewrite(str(phone_number), interval=0.02)
             time.sleep(0.8)
-            pyautogui.press('enter')
+            if self.cfg.get('use_click'):
+                x, y = self.cfg['click_point']
+                pyautogui.click(x, y)
+            else:
+                pyautogui.press('enter')
             time.sleep(self.cfg.get('search_wait_sec', 2.0))
             if not self.verify_contact(contact_name or str(phone_number)):
                 self.log(f"联系人校验失败 -> 期望: {contact_name or phone_number}")
@@ -206,16 +254,16 @@ class Sender:
                 self.log(f"✅ 发送成功 -> {contact_name or phone_number}")
                 return True
             else:
-                self.log(f"❌ 验证失败/异常，第 {i} 次尝试")
+                self.log(f"验证失败/异常，第 {i} 次尝试")
                 time.sleep(0.8)
-        self.log(f"🛑 发送失败 -> {contact_name or phone_number}")
+        self.log(f"发送失败 -> {contact_name or phone_number}")
         return False
-
 
 # ================== GUI 主程序 ===========================
 
-class App:
+class SenderApp:
     def __init__(self, root):
+
         self.root = root
         self.root.title("欠费通知自动发送工具")
         self.root.geometry("820x700")
@@ -239,13 +287,27 @@ class App:
         ttk.Entry(frm_file, textvariable=self.var_excel).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=pad, pady=pad)
         ttk.Button(frm_file, text="选择...", command=self.select_excel).pack(side=tk.LEFT, padx=pad)
 
+        # 鼠标点击设置
+        frm_click = ttk.LabelFrame(self.root, text="模拟鼠标点击设置")
+        frm_click.pack(fill=tk.X, padx=pad, pady=pad)
+        self.use_click = tk.BooleanVar(value=bool(self.cfg.get('use_click', True)))
+        ttk.Button(frm_click, text="选择确认区域", command=self.choose_click_point).grid(row=0, column=1,
+                                                                                          padx=pad, pady=pad)
+        ttk.Checkbutton(frm_click, text="启用 鼠标点击", variable=self.use_click).grid(row=0, column=0,
+                                                                                       sticky='w',
+                                                                                       padx=pad,
+                                                                                       pady=pad)
+
         frm_ocr = ttk.LabelFrame(self.root, text="OCR 设置")
         frm_ocr.pack(fill=tk.X, padx=pad, pady=pad)
-        self.var_use_ocr = tk.BooleanVar(value=bool(self.cfg.get('use_ocr', True)))
-        ttk.Checkbutton(frm_ocr, text="启用 OCR 验证（联系人 + 消息）", variable=self.var_use_ocr).grid(row=0, column=0,
-                                                                                                      sticky='w',
-                                                                                                      padx=pad,
-                                                                                                      pady=pad)
+        self.use_ocr = tk.BooleanVar(value=bool(self.cfg.get('use_ocr', True)))
+        ttk.Checkbutton(frm_ocr, text="启用 OCR 验证（联系人 + 消息）", variable=self.use_ocr).grid(row=0,
+                                                                                                  column=0,
+                                                                                                  sticky='w',
+                                                                                                  padx=pad,
+                                                                                                  pady=pad)
+
+
         ttk.Label(frm_ocr, text="相似度阈值").grid(row=0, column=2, sticky='e', padx=pad)
         self.var_threshold = tk.DoubleVar(value=float(self.cfg.get('ocr_threshold', 0.70)))
         ttk.Entry(frm_ocr, textvariable=self.var_threshold, width=8).grid(row=0, column=3, sticky='w', padx=pad)
@@ -254,6 +316,7 @@ class App:
         frm_region.pack(fill=tk.X, padx=pad, pady=pad)
         ttk.Button(frm_region, text="选择联系人区域", command=self.choose_contact_region).grid(row=0, column=0,
                                                                                                padx=pad, pady=pad)
+
         ttk.Button(frm_region, text="选择消息区域", command=self.choose_message_region).grid(row=0, column=1, padx=pad,
                                                                                              pady=pad)
         ttk.Button(frm_region, text="预览联系人OCR", command=self.preview_contact_ocr).grid(row=0, column=2, padx=pad,
@@ -332,6 +395,15 @@ class App:
             # 用户选择新文件时，默认禁用“未发送名单”按钮
             self.update_button_states(False)
 
+    def choose_click_point(self):
+        messagebox.showinfo("提示", "请选取【联系人名称】所在区域")
+        click_point = self.ocr_manager.select_point_gui()
+        if click_point:
+            self.cfg['click_point'] = click_point
+            self.log(f"点击区域: {click_point}")
+        else:
+            self.log("点击区域选择取消或无效")
+
     def choose_contact_region(self):
         messagebox.showinfo("提示", "请选取【联系人名称】所在区域")
         region = self.ocr_manager.select_region_gui()
@@ -370,7 +442,6 @@ class App:
         text = self.ocr_manager.recognize_text(self.cfg['region_message'], self.cfg['ocr_lang'])
         self.log(f"[预览-消息] -> {text}")
 
-    # 新增一个中转方法，用于在点击按钮时获取路径并传递给核心处理函数
     def on_start_processing_click(self):
         excel_path = self.var_excel.get()
         if not excel_path or not os.path.exists(excel_path):
@@ -384,7 +455,15 @@ class App:
         self.cfg['max_retries'] = int(self.var_retries.get())
         self.cfg['search_wait_sec'] = float(self.var_search_wait.get())
         self.cfg['post_send_wait_sec'] = float(self.var_post_wait.get())
-        self.cfg['use_ocr'] = bool(self.var_use_ocr.get())
+        self.cfg['use_ocr'] = bool(self.use_ocr.get())
+
+        if self.cfg['use_click'] and not self.cfg.get('click_point'):
+            # 弹出警告框，让用户决定是否继续
+            messagebox.showerror(
+                "警告",
+                "已勾选“启用 鼠标点击”，但未设置点击坐标。\n请设置点击坐标后再使用。"
+            )
+            return
 
         try:
             sheets = pd.read_excel(excel_path, sheet_name=None)
@@ -483,13 +562,7 @@ class App:
             self.update_button_states(False)
             self.log("🎉 所有信息发送成功，没有失败记录")
 
-
 if __name__ == '__main__':
     root = tk.Tk()
-    style = ttk.Style()
-    try:
-        style.theme_use('clam')
-    except Exception:
-        pass
-    app = App(root)
+    SenderApp(root)
     root.mainloop()
