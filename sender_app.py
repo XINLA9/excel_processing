@@ -8,6 +8,7 @@ from tkinter import filedialog, messagebox, ttk
 import pandas as pd
 import pyautogui
 import pyperclip
+import openpyxl
 
 from PIL import Image, ImageGrab, ImageOps, ImageFilter
 
@@ -224,7 +225,7 @@ class Sender:
             pyautogui.hotkey('ctrl', 'f')
             time.sleep(0.8)
             pyautogui.typewrite(str(phone_number), interval=0.02)
-            time.sleep(0.8)
+            time.sleep(1.5)
             if self.cfg.get('use_click'):
                 x, y = self.cfg['click_point']
                 pyautogui.click(x, y)

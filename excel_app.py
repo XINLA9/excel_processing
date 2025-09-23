@@ -1,12 +1,11 @@
-import pandas as pd
-import numpy as np
-import re
 import os
+import re
 import sys
-from datetime import datetime, timedelta
 import tkinter as tk
+from datetime import datetime, timedelta
 from tkinter import filedialog, messagebox, ttk
-from io import StringIO
+
+import pandas as pd
 
 
 class TextRedirector(object):
@@ -29,7 +28,7 @@ def main():
     # 创建主窗口
     root = tk.Tk()
     root.title("数据催款处理工具")
-    root.geometry("800x600")  # 增加窗口高度以容纳输出框
+    root.geometry("800x700")  # 增加窗口高度以容纳新控件
     root.configure(bg="#f0f0f0")
 
     # 存储文件路径的变量
@@ -39,6 +38,9 @@ def main():
         "剔除工单号文件": "",
         "保存文件夹": ""
     }
+
+    # 存储阈值
+    threshold_var = tk.IntVar(value=20)
 
     # 创建样式
     style = ttk.Style()
@@ -88,6 +90,9 @@ def main():
             messagebox.showerror("错误", f"请先选择以下文件：\n{', '.join(missing_files)}")
             return
 
+        # 获取阈值
+        threshold = threshold_var.get()
+
         # 禁用开始按钮，避免重复点击
         process_button.config(state="disabled")
         status_label.config(text="处理中，请稍候...")
@@ -100,7 +105,7 @@ def main():
         # 在新线程中处理数据，避免界面卡死
         import threading
         thread = threading.Thread(
-            target=lambda: process_data(file_paths, root, process_button, status_label, output_text))
+            target=lambda: process_data(file_paths, threshold, root, process_button, status_label, output_text))
         thread.daemon = True
         thread.start()
 
@@ -133,6 +138,20 @@ def main():
                             command=lambda ft=file_type: select_file(ft))
         button.pack(side=tk.RIGHT)
 
+    # 阈值设置区域
+    threshold_frame = ttk.LabelFrame(main_frame, text="客户经理未回款发票阈值设置", padding="10")
+    threshold_frame.pack(fill=tk.X, pady=10)
+
+    threshold_label = ttk.Label(threshold_frame, text="阈值:")
+    threshold_label.pack(side=tk.LEFT, padx=(0, 10))
+
+    threshold_spinbox = ttk.Spinbox(threshold_frame, from_=1, to=1000, textvariable=threshold_var, width=10)
+    threshold_spinbox.pack(side=tk.LEFT, padx=(0, 20))
+
+    threshold_info = ttk.Label(threshold_frame,
+                               text="设置客户经理未回款发票数量的阈值，超过此值的客户经理明细数据将被单独保存")
+    threshold_info.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
     # 处理按钮
     process_button = ttk.Button(main_frame, text="开始处理", command=start_processing, state="normal")
     process_button.pack(pady=10)
@@ -163,8 +182,8 @@ def main():
     root.mainloop()
 
 
-# 修改 process_data 函数以接受 output_text 参数
-def process_data(file_paths, root, process_button, status_label, output_text):
+# 修改 process_data 函数以接受 threshold 参数
+def process_data(file_paths, threshold, root, process_button, status_label, output_text):
     """处理数据的主函数"""
     try:
         # 重定向标准输出到文本框
@@ -182,6 +201,7 @@ def process_data(file_paths, root, process_button, status_label, output_text):
         print(f"维度表文件: {file_path2}")
         print(f"剔除工单号文件: {exclude_file_path}")
         print(f"保存文件夹: {save_dir}")
+        print(f"客户经理未回款发票阈值: {threshold}")
 
         # 读取原始数据
         df = pd.read_excel(file_path)
@@ -380,6 +400,50 @@ def process_data(file_paths, root, process_button, status_label, output_text):
         # 应用分类逻辑
         df_copy['催款类型'] = df_copy['回款天数'].apply(get_collection_type)
 
+        # ==================== 新增：客户经理统计和明细提取 ====================
+        print("\n开始统计客户经理未回款发票数量...")
+
+        # 筛选出超过30天的数据
+        df_over_30_days = df_copy[df_copy['回款天数'] > 30]
+        print(f"超过30天的未回款发票数量: {len(df_over_30_days)}")
+
+        # 统计每个客户经理的超过30天的未回款发票数量
+        manager_stats = df_over_30_days['补充客户经理'].value_counts().reset_index()
+        manager_stats.columns = ['客户经理', '未回款发票数量']
+
+        # 筛选出超过阈值的客户经理
+        exceeded_managers = manager_stats[manager_stats['未回款发票数量'] > threshold]
+        print(f"超过阈值({threshold})的客户经理数量: {len(exceeded_managers)}")
+
+        # 创建未达标客户经理文件夹
+        unqualified_dir = os.path.join(save_dir, "未达标客户经理")
+        os.makedirs(unqualified_dir, exist_ok=True)
+
+        # 为每个超过阈值的客户经理创建明细文件
+        if not exceeded_managers.empty:
+            print("开始提取超过阈值的客户经理明细数据...")
+
+            for _, row in exceeded_managers.iterrows():
+                manager_name = row['客户经理']
+                invoice_count = row['未回款发票数量']
+
+                # 筛选该客户经理的超过30天的明细数据
+                manager_data = df_over_30_days[df_over_30_days['补充客户经理'] == manager_name]
+
+                # 选择需要的字段
+                manager_detail = manager_data[[
+                    '所属分公司', '补充客户经理', '客户名称', '发票类型', '预开类型',
+                    '发票号码', '集团产品号码/CMIOT账户编号', '发票总金额', '发票状态',
+                    '账期', '是否已完全销账', '开票日期', '催款类型', '回款天数'
+                ]]
+
+                # 保存到Excel文件
+                manager_filename = f"{manager_name}_未回款明细_{datetime.now().strftime('%Y%m%d')}.xlsx"
+                manager_filepath = os.path.join(unqualified_dir, manager_filename)
+                manager_detail.to_excel(manager_filepath, index=False)
+
+                print(f"已保存 {manager_name} 的明细数据，共 {invoice_count} 条记录")
+
         # ==================== 创建不同催款类型的数据表 ====================
         # 一、30天通报
         df_30_days = df_copy[df_copy['催款类型'] == '大于30天并小于等于60天'].copy()
@@ -393,7 +457,7 @@ def process_data(file_paths, root, process_button, status_label, output_text):
             df_30_days['客户经理电话'] = df_30_days['补充客户经理'].map(manager_phone_mapping).fillna('')
             df_30_days['短信模板'] = df_30_days.apply(
                 lambda
-                    row: f"客户经理{row['补充客户经理']}名下{row['客户名称']}于{row['开票日期'].strftime('%Y-%m-%d')}开具发票，票号{row['发票号码']}，金额{row['发票总金额']}，逾期未回款30天以上，请尽快回款，如客户违约拒不回款的，应及时与客户确认后冲红发票。",
+                    row: f"客户经理{row['补充客户经理']}名下{row['客户名称']}于{row['开票日期'].strftime('%Y-%m-%d')}开具发票，票号{row['发票号码']}，金额{row['发票总金额']}，逾期未回款30天以上，请尽快回款。如客户违约拒不回款的，应及时与客户确认后冲红发票。",
                 axis=1
             )
             df_30_days = df_30_days[
@@ -412,7 +476,7 @@ def process_data(file_paths, root, process_button, status_label, output_text):
             df_60_days['客户经理电话'] = df_60_days['补充客户经理'].map(manager_phone_mapping).fillna('')
             df_60_days['短信模板'] = df_60_days.apply(
                 lambda
-                    row: f"客户经理{row['补充客户经理']}名下{row['客户名称']}于{row['开票日期'].strftime('%Y-%m-%d')}开具发票，票号{row['发票号码']}，金额{row['发票总金额']}，逾期未回款60天以上，请尽快回款，如客户违约拒不回款的，应及时与客户确认后冲红发票。",
+                    row: f"客户经理{row['补充客户经理']}名下{row['客户名称']}于{row['开票日期'].strftime('%Y-%m-%d')}开具发票，票号{row['发票号码']}，金额{row['发票总金额']}，逾期未回款60天以上，请尽快回款。如客户违约拒不回款的，应及时与客户确认后冲红发票。",
                 axis=1
             )
             df_60_days = df_60_days[
@@ -422,7 +486,9 @@ def process_data(file_paths, root, process_button, status_label, output_text):
         # 三、90天通报
         df_90_days = df_copy[df_copy['催款类型'] == '大于90天'].copy()
         if not df_90_days.empty:
-            df_90_days['收票日期'] = df_90_days['开票日期'] + timedelta(days=90)
+            # 计算一周后的日期
+            one_week_later = datetime.today() + timedelta(days=7)
+            df_90_days['收票日期'] = one_week_later
             df_90_days['总监'] = df_90_days['补充客户经理'].map(director_mapping).fillna('')
             df_90_days['总监电话'] = df_90_days['补充客户经理'].map(director_phone_mapping).fillna('')
             df_90_days['分管领导'] = df_90_days['补充客户经理'].map(leader_mapping).fillna('')
@@ -431,7 +497,7 @@ def process_data(file_paths, root, process_button, status_label, output_text):
             df_90_days['客户经理电话'] = df_90_days['补充客户经理'].map(manager_phone_mapping).fillna('')
             df_90_days['短信模板'] = df_90_days.apply(
                 lambda
-                    row: f"客户经理{row['补充客户经理']}名下{row['客户名称']}于{row['开票日期'].strftime('%Y-%m-%d')}开具发票，票号{row['发票号码']}，金额{row['发票总金额']}，逾期未回款90天以上，请尽快回款，如客户违约拒不回款的，应及时与客户确认后冲红发票。",
+                    row: f"客户经理{row['补充客户经理']}名下{row['客户名称']}于{row['开票日期'].strftime('%Y-%m-%d')}开具发票，票号{row['发票号码']}，金额{row['发票总金额']}，逾期未回款90天以上，请于{row['收票日期'].strftime('%Y-%m-%d')}内回款。如客户违约拒不回款的，应及时与客户确认后冲红发票。",
                 axis=1
             )
             df_90_days = df_90_days[
@@ -463,6 +529,9 @@ def process_data(file_paths, root, process_button, status_label, output_text):
             # 保存数据透视表
             pivot_table.to_excel(writer, sheet_name='数据汇总', index=True)
 
+            # 保存客户经理统计
+            manager_stats.to_excel(writer, sheet_name='客户经理统计', index=False)
+
             # 保存未匹配的数据
             if not unknown_branch.empty:
                 unknown_branch.to_excel(writer, sheet_name='未匹配分公司数据', index=False)
@@ -484,6 +553,8 @@ def process_data(file_paths, root, process_button, status_label, output_text):
 
         # 在界面线程中显示完成消息
         success_message = f"文件已成功保存至:\n{result_filepath}"
+        if not exceeded_managers.empty:
+            success_message += f"\n\n超过阈值的客户经理明细已保存至:\n{unqualified_dir}"
 
         root.after(0, lambda: messagebox.showinfo("完成", success_message))
         root.after(0, lambda: status_label.config(text="处理完成"))
