@@ -4,8 +4,6 @@ import time
 import difflib
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-# add test
-# test 2
 
 import pandas as pd
 import pyautogui
