@@ -4,7 +4,6 @@ import time
 import difflib
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-# ssh
 
 import pandas as pd
 import pyautogui
@@ -279,6 +278,7 @@ class SenderApp:
 
         self.build_ui()
         self.update_button_states(os.path.exists(self.failed_file_path))
+        self.show_instructions()
 
     # ---------- UI ----------
     def build_ui(self):
@@ -458,6 +458,7 @@ class SenderApp:
         self.cfg['search_wait_sec'] = float(self.var_search_wait.get())
         self.cfg['post_send_wait_sec'] = float(self.var_post_wait.get())
         self.cfg['use_ocr'] = bool(self.use_ocr.get())
+        self.cfg['use_click'] = bool(self.use_click.get())
 
         if self.cfg['use_click'] and not self.cfg.get('click_point'):
             # 弹出警告框，让用户决定是否继续
@@ -473,19 +474,19 @@ class SenderApp:
             messagebox.showerror("错误", f"无法读取 Excel: {e}")
             return
 
-        try:
-            pyautogui.hotkey('win')
-            time.sleep(0.8)
-            pyperclip.copy("移动办公")
-            pyautogui.hotkey('ctrl', 'v')
-            time.sleep(0.6)
-            pyautogui.press('enter')
-            time.sleep(1.0)
-            pyautogui.press('enter')
-            time.sleep(1.5)
-        except Exception as e:
-            self.log(f"尝试启动应用失败（可忽略，若已打开）: {e}")
+        # try:
+        #     pyautogui.hotkey('win')
+        #     time.sleep(1)
+        #     pyperclip.copy("移动办公")
+        #     pyautogui.hotkey('ctrl', 'v')
+        #     time.sleep(0.6)
+        #     pyautogui.press('enter')
+        #     time.sleep(2.0)
+        # except Exception as e:
+        #     self.log(f"尝试启动应用失败（可忽略，若已打开）: {e}")
 
+        messagebox.showinfo("使用指南","自动化发送即将开始\n 请马上将移动办公置于最前面，在发送完成前不要有其他操作。")
+        time.sleep(5.0)
         tgt = set(self.cfg.get('target_sheets', []))
         total, okcnt, failcnt = 0, 0, 0
         failed_sends_by_sheet = {}
